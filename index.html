@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Project PROSPER - Rice Yield Predictor (TFLite Required)</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- TensorFlow.js and TFLite Web Runtime -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-tflite@latest/dist/tf-tflite.min.js"></script>
+</head>
+<body class="bg-slate-50 text-slate-800 font-sans antialiased min-h-screen">
+    <div class="max-w-5xl mx-auto p-6">
+        <header class="mb-8 text-center border-b pb-6 border-slate-200">
+            <h1 class="text-4xl font-extrabold text-emerald-700 tracking-tight">Project PROSPER</h1>
+            <p class="text-slate-600 mt-2 text-lg">Climate-Smart Rice Yield Prediction (TFLite Engine)</p>
+            <div id="model-status" class="mt-3 inline-block px-4 py-1.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800">
+                ⌛ Initializing & Loading model/ourmodel.tflite...
+            </div>
+        </header>
+
+        <!-- Error Notification Banner (hidden by default) -->
+        <div id="error-banner" class="hidden mb-6 p-4 rounded-lg bg-red-100 border border-red-300 text-red-800 text-sm font-medium text-center">
+            ❌ <strong>Error:</strong> Failed to load <code class="bg-red-200 px-1 py-0.5 rounded">model/ourmodel.tflite</code>. The application cannot run without the model file.
+        </div>
+
+        <!-- Navigation Tabs -->
+        <div class="flex justify-center mb-8 space-x-4">
+            <button onclick="switchTab('quarter')" id="btn-quarter" class="px-6 py-2.5 rounded-lg font-semibold bg-emerald-600 text-white shadow transition">Quarterly Prediction</button>
+            <button onclick="switchTab('year')" id="btn-year" class="px-6 py-2.5 rounded-lg font-semibold bg-slate-200 text-slate-700 hover:bg-slate-300 transition">Annual Coverage Forecast</button>
+        </div>
+
+        <!-- MENU 1: Quarterly Prediction -->
+        <div id="section-quarter" class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+            <h2 class="text-xl font-bold mb-4 text-emerald-800">Menu 1: Predict per Quarter Based on ONI</h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Season / Quarter</label>
+                    <select id="q-season" class="w-full border rounded-lg p-2.5 bg-slate-50 border-slate-300 focus:ring-emerald-500 focus:border-emerald-500">
+                        <option value="JFM">Q1 (JFM - Jan/Feb/Mar)</option>
+                        <option value="AMJ">Q2 (AMJ - Apr/May/Jun)</option>
+                        <option value="JAS">Q3 (JAS - Jul/Aug/Sep)</option>
+                        <option value="OND">Q4 (OND - Oct/Nov/Dec)</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">ONI Value</label>
+                    <input type="number" id="q-oni" step="0.1" value="0.5" class="w-full border rounded-lg p-2.5 bg-slate-50 border-slate-300 focus:ring-emerald-500 focus:border-emerald-500">
+                </div>
+                <div class="flex items-end">
+                    <button onclick="predictQuarter()" id="btn-predict-q" disabled class="w-full bg-emerald-600 text-white py-2.5 rounded-lg font-semibold hover:bg-emerald-700 shadow transition disabled:opacity-50 disabled:cursor-not-allowed">Predict Yield</button>
+                </div>
+            </div>
+
+            <!-- Prediction Output Table -->
+            <div class="mt-8">
+                <h3 class="text-md font-semibold text-slate-700 mb-3">Prediction Output & Data Log</h3>
+                <div class="overflow-x-auto">
+                    <table class="w-full border-collapse border border-slate-200 text-left rounded-lg">
+                        <thead>
+                            <tr class="bg-emerald-50 text-emerald-900 border-b border-slate-200">
+                                <th class="p-3 font-semibold">Season</th>
+                                <th class="p-3 font-semibold">ONI Index</th>
+                                <th class="p-3 font-semibold">Predicted Rice Yield (MT/ha)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="quarter-table-body" class="divide-y divide-slate-200">
+                            <tr><td colspan="3" class="p-4 text-center text-slate-400">No predictions generated yet. Load TFLite model and click "Predict Yield".</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- MENU 2: Annual Coverage Forecast -->
+        <div id="section-year" class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 hidden">
+            <h2 class="text-xl font-bold mb-4 text-emerald-800">Menu 2: Annual Coverage Prediction (Graph Output)</h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Prediction Simulation Mode</label>
+                    <select id="y-mode" class="w-full border rounded-lg p-2.5 bg-slate-50 border-slate-300 focus:ring-emerald-500 focus:border-emerald-500" onchange="toggleOniInput()">
+                        <option value="constant">Constant ONI Across Year</option>
+                        <option value="rolling">Rolling Random ONI (Simulation)</option>
+                    </select>
+                </div>
+                <div id="oni-input-container">
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Base Constant ONI Value</label>
+                    <input type="number" id="y-oni" step="0.1" value="0.0" class="w-full border rounded-lg p-2.5 bg-slate-50 border-slate-300 focus:ring-emerald-500 focus:border-emerald-500">
+                </div>
+                <div class="flex items-end">
+                    <button onclick="predictYear()" id="btn-predict-y" disabled class="w-full bg-emerald-600 text-white py-2.5 rounded-lg font-semibold hover:bg-emerald-700 shadow transition disabled:opacity-50 disabled:cursor-not-allowed">Generate Forecast Graph</button>
+                </div>
+            </div>
+
+            <!-- Graph Output -->
+            <div class="mt-8 bg-slate-50 p-4 rounded-xl border border-slate-200">
+                <canvas id="annualChart" class="w-full max-h-96"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let tfliteModel = null;
+        let annualChartInstance = null;
+
+        // Season one-hot vector mapping: [Season_JFM, Season_AMJ, Season_JAS, Season_OND]
+        const seasonEncoding = {
+            'JFM': [1, 0, 0, 0],
+            'AMJ': [0, 1, 0, 0],
+            'JAS': [0, 0, 1, 0],
+            'OND': [0, 0, 0, 1]
+        };
+
+        // Strictly load TFLite model from model/ourmodel.tflite
+        async function loadTFLiteModel() {
+            const statusEl = document.getElementById('model-status');
+            const errorBanner = document.getElementById('error-banner');
+
+            try {
+                tfliteModel = await tflite.loadTFLiteModel('./model/ourmodel.tflite');
+                
+                // Enable buttons on successful load
+                document.getElementById('btn-predict-q').disabled = false;
+                document.getElementById('btn-predict-y').disabled = false;
+                
+                statusEl.className = "mt-3 inline-block px-4 py-1.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800";
+                statusEl.innerText = "✅ TFLite Model Loaded & Ready";
+                errorBanner.classList.add('hidden');
+            } catch (err) {
+                console.error("Critical Error: Failed to load TFLite model.", err);
+                
+                // Keep prediction buttons disabled and display failure message
+                document.getElementById('btn-predict-q').disabled = true;
+                document.getElementById('btn-predict-y').disabled = true;
+
+                statusEl.className = "mt-3 inline-block px-4 py-1.5 rounded-full text-xs font-semibold bg-red-100 text-red-800";
+                statusEl.innerText = "❌ Model File Missing or Invalid";
+                errorBanner.classList.remove('hidden');
+            }
+        }
+
+        async function runTFLiteInference(oni, season) {
+            if (!tfliteModel) {
+                alert("Cannot run prediction: TFLite model is not loaded.");
+                throw new Error("TFLite model not loaded.");
+            }
+
+            // Prepare feature array: [ONI, JFM, AMJ, JAS, OND]
+            const encodedSeason = seasonEncoding[season] || [0, 0, 0, 0];
+            const featureVector = [oni, ...encodedSeason];
+
+            // Tensor shape [1, 5]
+            const inputTensor = tf.tensor2d([featureVector], [1, featureVector.length]);
+            
+            // Execute model inference
+            const outputTensor = tfliteModel.predict(inputTensor);
+            const outputData = await outputTensor.data();
+
+            // Free tensor memory
+            inputTensor.dispose();
+            outputTensor.dispose();
+
+            return Number(outputData[0].toFixed(4));
+        }
+
+        function switchTab(tab) {
+            if (tab === 'quarter') {
+                document.getElementById('section-quarter').classList.remove('hidden');
+                document.getElementById('section-year').classList.add('hidden');
+                document.getElementById('btn-quarter').className = "px-6 py-2.5 rounded-lg font-semibold bg-emerald-600 text-white shadow transition";
+                document.getElementById('btn-year').className = "px-6 py-2.5 rounded-lg font-semibold bg-slate-200 text-slate-700 hover:bg-slate-300 transition";
+            } else {
+                document.getElementById('section-quarter').classList.add('hidden');
+                document.getElementById('section-year').classList.remove('hidden');
+                document.getElementById('btn-year').className = "px-6 py-2.5 rounded-lg font-semibold bg-emerald-600 text-white shadow transition";
+                document.getElementById('btn-quarter').className = "px-6 py-2.5 rounded-lg font-semibold bg-slate-200 text-slate-700 hover:bg-slate-300 transition";
+            }
+        }
+
+        function toggleOniInput() {
+            const mode = document.getElementById('y-mode').value;
+            const container = document.getElementById('oni-input-container');
+            container.style.display = mode === 'rolling' ? 'none' : 'block';
+        }
+
+        async function predictQuarter() {
+            const season = document.getElementById('q-season').value;
+            const oni = parseFloat(document.getElementById('q-oni').value);
+
+            const yieldVal = await runTFLiteInference(oni, season);
+
+            const tbody = document.getElementById('quarter-table-body');
+            if (tbody.querySelector('.text-slate-400')) tbody.innerHTML = '';
+
+            const row = `<tr class="hover:bg-slate-50 transition">
+                <td class="p-3 font-medium text-slate-800">${season}</td>
+                <td class="p-3 text-slate-600">${oni}</td>
+                <td class="p-3 text-emerald-700 font-bold">${yieldVal} MT/ha</td>
+            </tr>`;
+            tbody.insertAdjacentHTML('afterbegin', row);
+        }
+
+        async function predictYear() {
+            const mode = document.getElementById('y-mode').value;
+            const oni_value = parseFloat(document.getElementById('y-oni').value);
+
+            const seasons = ['JFM', 'AMJ', 'JAS', 'OND'];
+            const forecast = [];
+
+            for (let i = 0; i < seasons.length; i++) {
+                const season = seasons[i];
+                let oni = oni_value;
+                if (mode === 'rolling') {
+                    oni = Number((Math.random() * 3 - 1.5).toFixed(2));
+                }
+                const pred = await runTFLiteInference(oni, season);
+                forecast.push({ season, oni, predictedYield: pred });
+            }
+
+            const labels = forecast.map(item => `${item.season} (ONI: ${item.oni})`);
+            const yields = forecast.map(item => item.predictedYield);
+
+            const ctx = document.getElementById('annualChart').getContext('2d');
+            if (annualChartInstance) annualChartInstance.destroy();
+
+            annualChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Predicted Rice Yield (MT/ha)',
+                        data: yields,
+                        borderColor: '#059669',
+                        backgroundColor: 'rgba(5, 150, 105, 0.1)',
+                        borderWidth: 3,
+                        pointBackgroundColor: '#047857',
+                        pointRadius: 5,
+                        fill: true,
+                        tension: 0.3
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: { position: 'top' },
+                        title: { display: true, text: `Annual Yield Coverage Forecast (${mode.toUpperCase()} Mode)` }
+                    },
+                    scales: {
+                        y: { title: { display: true, text: 'Yield (MT/ha)' } },
+                        x: { title: { display: true, text: 'Quarter / Season' } }
+                    }
+                }
+            });
+        }
+
+        window.addEventListener('DOMContentLoaded', loadTFLiteModel);
+    </script>
+</body>
+</html>
